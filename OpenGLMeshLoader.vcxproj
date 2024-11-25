@@ -88,7 +88,9 @@
     <ClCompile Include="OpenGLMeshLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\Downloads\stb_image.h" />
     <ClInclude Include="GLTexture.h" />
+    <ClInclude Include="OBJModel.h" />
     <ClInclude Include="Model_3DS.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

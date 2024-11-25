@@ -1,6 +1,7 @@
 #include "TextureBuilder.h"
 #include "Model_3DS.h"
 #include "GLTexture.h"
+#include "OBJModel.h"
 #include <glut.h>
 #include <cmath>
 #include <iostream>
@@ -50,11 +51,50 @@ Model_3DS model_house;
 Model_3DS model_tree;
 Model_3DS model_player;
 Model_3DS model_rifle;  // New rifle model
+Model_3DS model_barrel;
+OBJModel model_target1;
 
 GLTexture tex_sky;  // Declare the sky texture globally
 
+struct Target1 {
+    float x, z;       // X and Z position on the ground
+    float scale;      // Scaling factor
+    float rotationX;  // Rotation about the X-axis
+    bool isRotating;  // Whether the target rotates
+};
 
-// Tree positions
+std::vector<Target1> targets = {
+    {10.0f, -20.0f, 0.2f, 0.0f, true},
+    {-30.0f, 15.0f, 0.2f, 0.0f, false},
+    {35.0f, -40.0f, 0.2f, 0.0f, true},
+    {60.0f, -70.0f, 0.2f, 0.0f, true},
+    {-50.0f, 40.0f, 0.2f, 0.0f, false},
+    {90.0f, 5.0f, 0.2f, 0.0f, true},
+    {-75.0f, -60.0f, 0.2f, 0.0f, false},
+    {50.0f, 80.0f, 0.2f, 0.0f, true},
+    {-90.0f, -40.0f, 0.2f, 0.0f, false},
+    {100.0f, 20.0f, 0.2f, 0.0f, true}
+};
+
+// Barrels - Level 1
+struct BarrelPosition {
+    float x, z;     // X and Z position on the ground
+    float scale;    // Scaling factor
+    float rotation; // Rotation angle
+};
+
+// Define a vector with barrel positions
+std::vector<BarrelPosition> barrels = {
+    {15.0f, -15.0f, 0.001f, 0.0f},
+    {-25.0f, 10.0f, 0.001f, 45.0f},
+    {40.0f, -50.0f, 0.001f, 90.0f},
+    {70.0f, -90.0f, 0.001f, 180.0f},
+    {-60.0f, 50.0f, 0.001f, 270.0f},
+    {100.0f, 15.0f, 0.001f, 30.0f}
+};
+
+
+// Tree positions - Level 1
 struct TreePosition {
     float x, z;
     float scale;
@@ -62,23 +102,24 @@ struct TreePosition {
 };
 
 std::vector<TreePosition> trees = {
-    {10.0f, -10.0f, 0.5f, 0.0f},    // Original tree
-    {-15.0f, -20.0f, 0.6f, 45.0f},
-    {25.0f, -15.0f, 0.4f, 90.0f},
-    {-8.0f, -30.0f, 0.5f, 180.0f},
-    {30.0f, -25.0f, 0.55f, 270.0f},
-    {-20.0f, 15.0f, 0.45f, 120.0f},
-    {15.0f, 25.0f, 0.5f, 200.0f},
-    {-25.0f, -5.0f, 0.6f, 150.0f},
-    {35.0f, 10.0f, 0.4f, 80.0f},
-    {-30.0f, 25.0f, 0.5f, 220.0f},
-    {20.0f, -30.0f, 0.55f, 30.0f},
-    {-35.0f, -15.0f, 0.45f, 160.0f},
-    {40.0f, 20.0f, 0.5f, 290.0f},
-    {-40.0f, 10.0f, 0.6f, 100.0f},
-    {25.0f, 35.0f, 0.4f, 240.0f},
-    {-15.0f, 40.0f, 0.5f, 70.0f}
+    {20.0f, -20.0f, 0.5f, 0.0f},
+    {-40.0f, -30.0f, 0.6f, 45.0f},
+    {50.0f, -70.0f, 0.4f, 90.0f},
+    {80.0f, -100.0f, 0.5f, 180.0f},
+    {100.0f, -120.0f, 0.55f, 270.0f},
+    {-120.0f, 80.0f, 0.45f, 120.0f},
+    {90.0f, 100.0f, 0.5f, 200.0f},
+    {-50.0f, -90.0f, 0.6f, 150.0f},
+    {120.0f, 60.0f, 0.4f, 80.0f},
+    {-80.0f, 90.0f, 0.5f, 220.0f},
+    {110.0f, -130.0f, 0.55f, 30.0f},
+    {-130.0f, -70.0f, 0.45f, 160.0f},
+    {140.0f, 110.0f, 0.5f, 290.0f},
+    {-110.0f, 70.0f, 0.6f, 100.0f},
+    {130.0f, 140.0f, 0.4f, 240.0f},
+    {-70.0f, 130.0f, 0.5f, 70.0f}
 };
+
 
 // Textures
 GLTexture tex_ground;
@@ -180,15 +221,16 @@ void RenderFirstPersonWeapon() {
 
 
     // Position the weapon
-    glTranslatef(0.3f, -0.45f , -0.5f);  // Adjust these values to position the weapon
+    glTranslatef(0.3f, -0.4f , -0.9f);  // Adjust these values to position the weapon
 
     // Apply weapon rotation based on camera look direction
 
 
     // Rotate and scale the weapon model
+    glScalef(0.0005f, 0.0005f, 0.0005f);
+
     glRotatef(180.0f, 0.0f, 1.0f, 0.0f);  // Align weapon model
     glRotatef(270.0f, 0.0f, 1.0f, 0.0f);   // Point weapon forward
-    glScalef(1.2f, 1.2f, 1.2f);
     // Draw the weapon
     model_rifle.Draw();
 
@@ -245,6 +287,46 @@ void RenderTrees() {
         glPopMatrix();
     }
 }
+
+void RenderBarrels() {
+    for (const auto& barrel : barrels) {
+        glPushMatrix();
+
+        // Position each barrel
+        glTranslatef(barrel.x, 0.0f, barrel.z);
+
+        // Rotate the barrel
+        glRotatef(barrel.rotation, 0.0f, 1.0f, 0.0f);
+
+        // Scale the barrel
+        glScalef(barrel.scale, barrel.scale, barrel.scale);
+
+        // Draw the barrel model
+        model_barrel.Draw();
+
+        glPopMatrix();
+    }
+}
+void RenderTargets() {
+    for (const auto& target : targets) {
+        glPushMatrix();
+
+        // Position the target
+        glTranslatef(target.x, 1.0f, target.z);
+
+        // Apply rotation about the X-axis
+        glRotatef(target.rotationX, 1.0f, 0.0f, 0.0f);
+
+        // Scale the target
+        glScalef(target.scale, target.scale, target.scale * 0.1);
+
+        // Render the target model
+        model_target1.Draw();
+
+        glPopMatrix();
+    }
+}
+
 
 void RenderSky() {
     glDisable(GL_LIGHTING);  // Disable lighting for the sky
@@ -330,6 +412,8 @@ void myDisplay(void) {
     // Render scene objects
     RenderGround();
     RenderTrees();
+    RenderBarrels();
+    RenderTargets(); // Render targets
 
     // Draw House
     glPushMatrix();
@@ -383,10 +467,7 @@ void myDisplay(void) {
 
     glutSwapBuffers();
 }
-void myIdle() {
-    UpdateLighting();
-    glutPostRedisplay();
-}
+
 
 //=======================================================================
 // Keyboard Input Handler
@@ -451,11 +532,39 @@ void LoadAssets() {
     model_house.Load("Models/house/house.3DS");
     model_tree.Load("Models/tree/Tree1.3ds");
     model_player.Load("Models/player/Soldier.3ds"); // Load the player model
-    model_rifle.Load("Models/gun/rifle.3ds");  // Load the rifle model
+    model_rifle.Load("Models/rifle/rifle.3ds");  // Load the rifle model
     tex_ground.Load("Textures/ground.bmp");
     tex_sky.Load("Textures/blu-sky-3.bmp"); // Load the sky texture
-
+    model_barrel.Load("Models/barrel/barrel.3ds");
+    if (!model_target1.LoadFromFile("Models/target2/target2.obj")) {
+        std::cerr << "Failed to load model!" << std::endl;
+        // Handle error
+    }
 }
+
+void UpdateTargets() {
+    for (auto& target : targets) {
+        if (target.isRotating) {
+            target.rotationX -= 1.0f; // Rotate -1 degree per frame
+
+            // Check if the target has reached -90 degrees
+            if (target.rotationX <= -90.0f) {
+                target.rotationX = -90.0f;  // Stop at -90 degrees
+                target.isRotating = false; // Reverse direction
+            }
+        }
+        else {
+            target.rotationX += 1.0f; // Rotate +1 degree per frame
+
+            // Check if the target has returned upright (0 degrees)
+            if (target.rotationX >= 0.0f) {
+                target.rotationX = 0.0f;   // Stop at upright
+                target.isRotating = true; // Reverse direction
+            }
+        }
+    }
+}
+
 
 //=======================================================================
 // Special Keys Callback (Arrow Keys)
@@ -482,6 +591,15 @@ void specialKeys(int key, int x, int y) {
     glutPostRedisplay();
 }
 
+/// 
+///  ========================
+/// 
+void myIdle() {
+    UpdateLighting();
+    UpdateTargets(); // Ensure targets update during idle time
+
+    glutPostRedisplay();
+}
 //=======================================================================
 // Main Function
 //=======================================================================
