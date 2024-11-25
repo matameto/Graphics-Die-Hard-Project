@@ -36,11 +36,22 @@ float weaponBobSpeed = 5.0f;
 float weaponBobAmount = 0.05f;
 bool isMoving = false;
 
+float gameTime = 0.0f;       // Game time in seconds
+float timeSpeed = 0.1f;      // Speed of time progression (adjust for faster/slower transitions)
+float sunAngle = 0.0f;       // Angle of the sun (degrees)
+float maxIntensity = 1.0f;   // Maximum light intensity
+float minIntensity = 0.1f;   // Minimum light intensity
+float lightIntensity = maxIntensity;  // Current light intensity
+GLfloat lightPosition[] = { 0.0f, 10.0f, 0.0f, 1.0f }; // Initial light position
+
+
 // Models
 Model_3DS model_house;
 Model_3DS model_tree;
 Model_3DS model_player;
 Model_3DS model_rifle;  // New rifle model
+
+GLTexture tex_sky;  // Declare the sky texture globally
 
 
 // Tree positions
@@ -235,9 +246,58 @@ void RenderTrees() {
     }
 }
 
+void RenderSky() {
+    glDisable(GL_LIGHTING);  // Disable lighting for the sky
+    glDisable(GL_DEPTH_TEST); // Disable depth testing to render the sky behind everything
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, tex_sky.texture[0]);
+
+    // Draw a large sphere for the sky
+    glPushMatrix();
+    glTranslatef(playerX, playerY - 1.8f, playerZ); // Center the sky around the player
+    glColor3f(1.0f, 1.0f, 1.0f); // Use default color
+
+    GLUquadric* sky = gluNewQuadric();
+    gluQuadricTexture(sky, GL_TRUE);
+    gluSphere(sky, 100.0f, 30, 30);  // Large sphere with the sky texture
+    gluDeleteQuadric(sky);
+
+    glPopMatrix();
+
+    glEnable(GL_LIGHTING);  // Re-enable lighting
+    glEnable(GL_DEPTH_TEST); // Re-enable depth testing
+}
+
+void UpdateLighting() {
+    // Update game time and sun angle
+    gameTime += timeSpeed;
+    if (gameTime >= 360.0f) gameTime -= 360.0f; // Reset after full day cycle
+    sunAngle = gameTime; // Sun angle progresses with time
+
+    // Update light position (rotate around player)
+    lightPosition[0] = 50.0f * cos(sunAngle * M_PI / 180.0f); // X-axis
+    lightPosition[1] = 50.0f * sin(sunAngle * M_PI / 180.0f); // Y-axis (height)
+    lightPosition[2] = 50.0f * cos(sunAngle * M_PI / 180.0f); // Z-axis
+
+    // Update light intensity based on time of day (sine wave for smooth transition)
+    lightIntensity = minIntensity + (maxIntensity - minIntensity) * 0.5f * (1.0f + sin(sunAngle * M_PI / 180.0f));
+
+    // Set light properties
+    GLfloat diffuse[] = { lightIntensity, lightIntensity, lightIntensity, 1.0f };
+    GLfloat ambient[] = { lightIntensity * 0.3f, lightIntensity * 0.3f, lightIntensity * 0.3f, 1.0f };
+
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+    glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
+}
+
+
 void myDisplay(void) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
+
+    UpdateLighting();
+
 
     float pitch_rad = playerPitch * (M_PI / 180.0f);
     float yaw_rad = playerYaw * (M_PI / 180.0f);
@@ -264,6 +324,8 @@ void myDisplay(void) {
             0.0f, 1.0f, 0.0f
         );
     }
+
+    RenderSky();
 
     // Render scene objects
     RenderGround();
@@ -321,7 +383,10 @@ void myDisplay(void) {
 
     glutSwapBuffers();
 }
-
+void myIdle() {
+    UpdateLighting();
+    glutPostRedisplay();
+}
 
 //=======================================================================
 // Keyboard Input Handler
@@ -388,6 +453,8 @@ void LoadAssets() {
     model_player.Load("Models/player/Soldier.3ds"); // Load the player model
     model_rifle.Load("Models/gun/rifle.3ds");  // Load the rifle model
     tex_ground.Load("Textures/ground.bmp");
+    tex_sky.Load("Textures/blu-sky-3.bmp"); // Load the sky texture
+
 }
 
 //=======================================================================
@@ -414,6 +481,7 @@ void specialKeys(int key, int x, int y) {
     }
     glutPostRedisplay();
 }
+
 //=======================================================================
 // Main Function
 //=======================================================================
@@ -433,6 +501,6 @@ void main(int argc, char** argv) {
 
     // Center the mouse cursor
     glutWarpPointer(WIDTH / 2, HEIGHT / 2);
-
+    glutIdleFunc(myIdle);
     glutMainLoop();
 }
