@@ -52,7 +52,9 @@ Model_3DS model_tree;
 Model_3DS model_player;
 Model_3DS model_rifle;  // New rifle model
 Model_3DS model_barrel;
-OBJModel model_target1;
+//OBJModel model_target1;
+Model_3DS model_target1;
+Model_3DS model_bullet;
 
 GLTexture tex_sky;  // Declare the sky texture globally
 
@@ -61,6 +63,7 @@ struct Target1 {
     float scale;      // Scaling factor
     float rotationX;  // Rotation about the X-axis
     bool isRotating;  // Whether the target rotates
+         
 };
 
 std::vector<Target1> targets = {
@@ -121,10 +124,36 @@ std::vector<TreePosition> trees = {
 };
 
 
+struct Bullet {
+	float x, y, z;  // Position
+	float directionX, directionY, directionZ; // Velocity
+	float  speed; // Whether the bullet is fired
+};
+
+std::vector<Bullet> bullets;
+
+
 // Textures
 GLTexture tex_ground;
 
 const float M_PI = 3.14159265358979323846;
+
+//=======================================================================
+// shoot function creates a new bullet every time it is called
+//=======================================================================
+
+void Shoot() {
+    Bullet bullet;
+    bullet.x = playerX;
+    bullet.y = playerY;
+    bullet.z = playerZ;
+    bullet.directionX = cos(playerYaw * (M_PI / 180.0f));
+    bullet.directionY = 0.0f; // Assuming bullets travel horizontally
+    bullet.directionZ = sin(playerYaw * (M_PI / 180.0f));
+    bullet.speed = 2.0f;
+   ; // Adjust speed as needed
+    bullets.push_back(bullet);
+}
 
 //=======================================================================
 // Update Camera Direction
@@ -173,6 +202,15 @@ void myMouseMotion(int x, int y) {
 
     glutPostRedisplay();
 }
+// shooting call back 
+void myMouse(int button, int state, int x, int y) {
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+		Shoot();
+	}
+}
+
+
+
 //=======================================================================
 // Initialize Function
 //=======================================================================
@@ -328,6 +366,24 @@ void RenderTargets() {
 }
 
 
+// bullets come out at different angles if the mouse is moved try and fix it please 
+
+
+void RenderBullets() {
+    for (const auto& bullet : bullets) {
+        glPushMatrix();
+        glTranslatef(bullet.x, bullet.y, bullet.z);
+        glScalef(0.0005f, 0.0005f, 0.0005f);
+        glRotatef(180.0f, 0.0f, 0.0f, 1.0f); 
+        glRotatef(90.0f, 0.0f, 1.0f, 0.0f); // point bullet forward
+        model_bullet.Draw();
+        glPopMatrix();
+    }
+}
+
+
+
+
 void RenderSky() {
     glDisable(GL_LIGHTING);  // Disable lighting for the sky
     glDisable(GL_DEPTH_TEST); // Disable depth testing to render the sky behind everything
@@ -425,6 +481,7 @@ void myDisplay(void) {
     // Render player last for proper transparency
     RenderPlayer();
     RenderFirstPersonWeapon();
+	RenderBullets();
 
     if (!isThirdPerson) {
         // Switch to orthographic projection
@@ -536,10 +593,12 @@ void LoadAssets() {
     tex_ground.Load("Textures/ground.bmp");
     tex_sky.Load("Textures/blu-sky-3.bmp"); // Load the sky texture
     model_barrel.Load("Models/barrel/barrel.3ds");
-    if (!model_target1.LoadFromFile("Models/target2/target2.obj")) {
-        std::cerr << "Failed to load model!" << std::endl;
-        // Handle error
-    }
+	model_target1.Load("Models/target1/target.3ds");
+	model_bullet.Load("Models/bullet/bullet.3ds");
+    //if (!model_target1.LoadFromFile("Models/target2/target2.obj")) {
+    //    std::cerr << "Failed to load model!" << std::endl;
+    //    // Handle error
+    //}
 }
 
 void UpdateTargets() {
@@ -564,6 +623,47 @@ void UpdateTargets() {
         }
     }
 }
+
+
+//bool CheckCollision(const Bullet& bullet, const Target1& target) {
+//    // Simple bounding box collision detection
+//    float halfWidth = target.width * target.scale / 2.0f;
+//    float halfHeight = target.height * target.scale / 2.0f;
+//
+//    return (bullet.x >= target.x - halfWidth && bullet.x <= target.x + halfWidth &&
+//        bullet.z >= target.z - halfHeight && bullet.z <= target.z + halfHeight);
+//}
+
+
+
+
+void UpdateBullets() {
+    for (auto & bullet : bullets ) {
+		bullet.x += bullet.directionX * bullet.speed;
+		bullet.y += bullet.directionY * bullet.speed;
+		bullet.z += bullet.directionZ * bullet.speed;
+	}
+
+    //    bool collisionDetected = false;
+    //    for (auto& target : targets) {
+    //        if (CheckCollision(*it, target)) {
+    //            collisionDetected = true;
+    //            // Handle collision (e.g., remove target, play sound, etc.)
+    //            std::cout << "Collision detected with target at (" << target.x << ", " << target.z << ")\n";
+    //            break;
+    //        }
+    //    }
+
+    //    if (collisionDetected) {
+    //        it = bullets.erase(it); // Remove bullet if collision detected
+    //    }
+    //    else {
+    //        ++it;
+    //    }
+    //}
+}
+
+
 
 
 //=======================================================================
@@ -597,7 +697,7 @@ void specialKeys(int key, int x, int y) {
 void myIdle() {
     UpdateLighting();
     UpdateTargets(); // Ensure targets update during idle time
-
+	UpdateBullets(); // Update bullet positions
     glutPostRedisplay();
 }
 //=======================================================================
@@ -616,7 +716,7 @@ void main(int argc, char** argv) {
     glutDisplayFunc(myDisplay);
     glutKeyboardFunc(myKeyboard);
     glutPassiveMotionFunc(myMouseMotion);  // Enable mouse motion callback
-
+	glutMouseFunc(myMouse);  // Enable mouse button callback
     // Center the mouse cursor
     glutWarpPointer(WIDTH / 2, HEIGHT / 2);
     glutIdleFunc(myIdle);
