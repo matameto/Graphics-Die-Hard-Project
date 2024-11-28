@@ -11,8 +11,9 @@
 enum GameState {
     START_SCREEN,
     LEVEL_1,
-    LEVEL_2, 
-    END_SCREEN
+    LEVEL_2,
+    END_SCREEN_WIN, 
+    END_SCREEN_LOSE
 };
 
 GameState currentGameState = START_SCREEN;
@@ -48,6 +49,10 @@ bool isMuzzleFlashActive = false;
 float muzzleFlashTimer = 0.0f;
 float recoilOffset = 0.0f;
 
+bool isTransitioningToLevel2 = false; // Indicates if a transition is in progress
+float transitionAlpha = 0.0f;        // Alpha value for the fade effect (0.0 = fully visible, 1.0 = fully black)
+float transitionSpeed = 0.01f;       // Speed of the fade effect
+
 
 
 float gameTime = 0.0f;       // Game time in seconds
@@ -68,6 +73,7 @@ Model_3DS model_rifle;  // New rifle model
 Model_3DS model_barrel;
 OBJModel model_target1;;
 Model_3DS model_bullet;
+Model_3DS model_light;
 
 GLTexture sky_morning;  // Declare the sky texture globally
 GLTexture sky_afternoon;
@@ -78,7 +84,9 @@ GLTexture muzzle_flash;
 GLTexture wall1;
 GLTexture bullseye;
 GLTexture tex_startScreen;
-
+GLTexture ground_l2;
+GLTexture ceiling;
+GLTexture wall2;
 
 struct CircularTarget {
     float x, y, z;      // Position
@@ -110,6 +118,8 @@ struct Bullet {
     float directionX, directionY, directionZ; // where the bullet is going
     float  speed; // Velocity
 };
+
+
 
 std::vector<Target1> targets = {
     {10.0f, -20.0f, 0.2f, 0.0f, true, false},
@@ -172,6 +182,13 @@ std::vector<TreePosition> trees = {
     {-70.0f, 130.0f, 0.5f, 70.0f}
 };
 std::vector<Bullet> bullets;
+
+// For flickering lights
+std::vector<GLfloat> lampPositionsX;  // X positions of the lamps
+std::vector<GLfloat> lampPositionsZ;  // Z positions of the lamps
+std::vector<GLfloat> lampLightIntensity; // Current light intensity for each lamp
+std::vector<float> flickerSpeeds;     // Flickering speeds for randomness
+
 
 void UpdateAmbientLight(bool isFlashing) {
     if (isFlashing) {
@@ -241,7 +258,7 @@ void Shoot() {
     bullet.directionX = cos(pitchRadians) * cos(yawRadians);
     bullet.directionY = sin(pitchRadians);
     bullet.directionZ = cos(pitchRadians) * sin(yawRadians);
-    
+
     bullet.speed = 0.5f; // Adjust speed as needed
 
     bullets.push_back(bullet);
@@ -303,35 +320,11 @@ void myMouseMotion(int x, int y) {
     glutPostRedisplay();
 }
 void myMouse(int button, int state, int x, int y) {
-	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-		Shoot();
-	}
+    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+        Shoot();
+    }
 }
-void myInit() {
-    glClearColor(0.0, 0.0, 0.0, 0.0);
 
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(45.0, (GLdouble)WIDTH / (GLdouble)HEIGHT, 0.1, 200.0);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-
-    // Enable necessary features
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-    glEnable(GL_NORMALIZE);
-    glEnable(GL_COLOR_MATERIAL);
-
-    // Setup lighting
-    GLfloat ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    GLfloat diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f };
-    GLfloat position[] = { 0.0f, 10.0f, 0.0f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
-    glLightfv(GL_LIGHT0, GL_POSITION, position);
-}
 void RenderFirstPersonWeapon() {
     if (isThirdPerson) return;  // Only render in first person
 
@@ -347,7 +340,7 @@ void RenderFirstPersonWeapon() {
 
 
     // Position the weapon
-    glTranslatef(0.3f, -0.4f , -0.9f);  // Adjust these values to position the weapon
+    glTranslatef(0.3f, -0.4f, -0.9f);  // Adjust these values to position the weapon
 
     // Apply weapon rotation based on camera look direction
 
@@ -412,16 +405,39 @@ void RenderMuzzleFlash() {
     glDisable(GL_BLEND);
     glPopMatrix();
 }
+void RenderCeiling() {
+    float ceilingHeight = 10.0f;
+
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, ceiling.texture[0]);
+
+    GLfloat mat_ambient[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+    GLfloat mat_diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f };
+    glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+    glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+
+    glBegin(GL_QUADS);
+    glNormal3f(0, -1, 0); // Correct normal for lighting
+    glTexCoord2f(0, 0); glVertex3f(-100, ceilingHeight, -100);
+    glTexCoord2f(10, 0); glVertex3f(100, ceilingHeight, -100);
+    glTexCoord2f(10, 10); glVertex3f(100, ceilingHeight, 100);
+    glTexCoord2f(0, 10); glVertex3f(-100, ceilingHeight, 100);
+    glEnd();
+
+    glDisable(GL_TEXTURE_2D);
+}
+
+
 void RenderWalls() {
     float groundMin = -100.0f;
     float groundMax = 100.0f;
     float wallHeight = 10.0f;  // Height of the walls
     float wallThickness = 1.0f; // Thickness of the walls
 
-   // glEnable(GL_TEXTURE_2D);
-    //glBindTexture(GL_TEXTURE_2D, tex_wall.texture[0]);
+    // glEnable(GL_TEXTURE_2D);
+     //glBindTexture(GL_TEXTURE_2D, tex_wall.texture[0]);
 
-    // North Wall (along Z-axis)
+     // North Wall (along Z-axis)
     glPushMatrix();
     wall1.Use();
 
@@ -512,6 +528,75 @@ void RenderWalls() {
 
     glDisable(GL_TEXTURE_2D);
 }
+
+
+void RenderWallsL2() {
+    float groundMin = -100.0f;
+    float groundMax = 100.0f;
+    float wallHeight = 10.0f;   // Height of the walls
+    float wallThickness = 1.0f; // Thickness of the walls
+    float roomGap = 15.0f;      // Width of the gap between rooms (for doors)
+
+    wall2.Use();
+
+    // Outer Walls (Same as before)
+    // North Wall
+    glPushMatrix();
+    glTranslatef(0, wallHeight / 2, groundMax);
+    glScalef(groundMax * 2, wallHeight, wallThickness);
+    glColor3f(1, 1, 1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex3f(-0.5, -0.5, 0.5);
+    glTexCoord2f(1, 0); glVertex3f(0.5, -0.5, 0.5);
+    glTexCoord2f(1, 1); glVertex3f(0.5, 0.5, 0.5);
+    glTexCoord2f(0, 1); glVertex3f(-0.5, 0.5, 0.5);
+    glEnd();
+    glPopMatrix();
+
+    // South Wall
+    glPushMatrix();
+    glTranslatef(0, wallHeight / 2, groundMin);
+    glScalef(groundMax * 2, wallHeight, wallThickness);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex3f(-0.5, -0.5, 0.5);
+    glTexCoord2f(1, 0); glVertex3f(0.5, -0.5, 0.5);
+    glTexCoord2f(1, 1); glVertex3f(0.5, 0.5, 0.5);
+    glTexCoord2f(0, 1); glVertex3f(-0.5, 0.5, 0.5);
+    glEnd();
+    glPopMatrix();
+
+    // East Wall
+    glPushMatrix();
+    glTranslatef(groundMax, wallHeight / 2, 0);
+    glRotatef(90, 0, 1, 0);
+    glScalef(groundMax * 2, wallHeight, wallThickness);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex3f(-0.5, -0.5, 0.5);
+    glTexCoord2f(1, 0); glVertex3f(0.5, -0.5, 0.5);
+    glTexCoord2f(1, 1); glVertex3f(0.5, 0.5, 0.5);
+    glTexCoord2f(0, 1); glVertex3f(-0.5, 0.5, 0.5);
+    glEnd();
+    glPopMatrix();
+
+    // West Wall
+    glPushMatrix();
+    glTranslatef(groundMin, wallHeight / 2, 0);
+    glRotatef(90, 0, 1, 0);
+    glScalef(groundMax * 2, wallHeight, wallThickness);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex3f(-0.5, -0.5, 0.5);
+    glTexCoord2f(1, 0); glVertex3f(0.5, -0.5, 0.5);
+    glTexCoord2f(1, 1); glVertex3f(0.5, 0.5, 0.5);
+    glTexCoord2f(0, 1); glVertex3f(-0.5, 0.5, 0.5);
+    glEnd();
+    glPopMatrix();
+
+   
+    glPopMatrix();
+
+    glDisable(GL_TEXTURE_2D);
+}
+
 void RenderGround() {
     glDisable(GL_LIGHTING);
     glColor3f(0.6, 0.8, 0.6);
@@ -529,6 +614,25 @@ void RenderGround() {
 
     glEnable(GL_LIGHTING);
 }
+
+void RenderGroundL2() {
+    glDisable(GL_LIGHTING);
+    //glColor3f(0.6, 0.8, 0.6);
+
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, ground_l2.texture[0]);
+
+    glBegin(GL_QUADS);
+    glNormal3f(0, 1, 0);
+    glTexCoord2f(0, 0); glVertex3f(-100, 0, -100);
+    glTexCoord2f(10, 0); glVertex3f(100, 0, -100);
+    glTexCoord2f(10, 10); glVertex3f(100, 0, 100);
+    glTexCoord2f(0, 10); glVertex3f(-100, 0, 100);
+    glEnd();
+
+    glEnable(GL_LIGHTING);
+}
+
 void RenderPlayer() {
     if (!isThirdPerson) return;
 
@@ -578,7 +682,7 @@ void RenderTargets() {
     for (const auto& target : targets) {
         if (target.isHit) continue; // Skip rendering hit targets
 
-        
+
         glPushMatrix();
 
         // Position the target
@@ -715,11 +819,10 @@ void RenderSky() {
     glEnable(GL_LIGHTING);
     glEnable(GL_DEPTH_TEST);
 }
-void UpdateLighting() {
-    // Update game time and sun angle
-    gameTime += timeSpeed;
-    if (gameTime >= 360.0f) gameTime -= 360.0f; // Reset after full day cycle
-    sunAngle = gameTime; // Sun angle progresses with time
+
+void UpdateLighting(float currentGameTime) {
+    // Update sun angle based on the provided game time
+    float sunAngle = currentGameTime; // Sun angle progresses with time
 
     // Compute normalized time (0 to 1) based on the sun's angle
     float normalizedTime = (sin(sunAngle * M_PI / 180.0f) + 1.0f) / 2.0f;
@@ -734,6 +837,7 @@ void UpdateLighting() {
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
     glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
 }
+
 void RenderBullseyeTargets() {
     bullseye.Use(); // Bind the bullseye texture
 
@@ -776,12 +880,278 @@ void RenderBullseyeTargets() {
 
     glDisable(GL_TEXTURE_2D); // Ensure textures are disabled after use
 }
-void myDisplay(void) {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+void RenderStartScreen() {
+    // Disable lighting and enable 2D textures
+    glDisable(GL_LIGHTING);
+    glEnable(GL_TEXTURE_2D);
+
+    // Switch to 2D orthographic projection
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    gluOrtho2D(0.0, WIDTH, 0.0, HEIGHT); // Match the screen dimensions
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
     glLoadIdentity();
 
-    UpdateLighting();
+    // Render the textured quad to fill the screen
+    tex_startScreen.Use(); // Bind the texture
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+    glTexCoord2f(1.0f, 0.0f); glVertex2f(WIDTH, 0.0f);
+    glTexCoord2f(1.0f, 1.0f); glVertex2f(WIDTH, HEIGHT);
+    glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, HEIGHT);
+    glEnd();
 
+    glDisable(GL_TEXTURE_2D);
+
+    glDisable(GL_DEPTH_TEST);
+    // Render the text
+    glColor3f(1.0f, 1.0f, 1.0f); // White color for text
+
+    // Position the title text
+    const char* titleText = "Die Hard!";
+    glRasterPos2f((WIDTH - glutBitmapLength(GLUT_BITMAP_TIMES_ROMAN_24, (const unsigned char*)titleText)) / 2, HEIGHT / 2 + 50);
+    for (const char* c = titleText; *c != '\0'; c++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+    }
+
+    // Position the instructions text
+    const char* instructions1 = "Press ENTER to Start";
+    glRasterPos2f((WIDTH - glutBitmapLength(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)instructions1)) / 2, HEIGHT / 2 - 50);
+    for (const char* c = instructions1; *c != '\0'; c++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+    }
+
+    const char* instructions2 = "Press ESC to Exit";
+    glRasterPos2f((WIDTH - glutBitmapLength(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)instructions2)) / 2, HEIGHT / 2 - 100);
+    for (const char* c = instructions2; *c != '\0'; c++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+    }
+
+    glEnable(GL_DEPTH_TEST);
+    // Restore the original projection and modelview matrices
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+}
+
+
+void RenderHUD(int currentScore, int totalTargets, int remainingTime) {
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+
+    // Switch to orthographic projection
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    gluOrtho2D(0.0, WIDTH, 0.0, HEIGHT);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // Set text color
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    // Render Level
+    std::string levelText = (currentGameState == LEVEL_1) ? "Level 1" : "Level 2";
+    glRasterPos2f(WIDTH / 2 - 50, HEIGHT - 30);
+    for (char c : levelText) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
+    }
+
+    // Render Score
+    std::string scoreText = "Score: " + std::to_string(currentScore) + " / " + std::to_string(totalTargets);
+    glRasterPos2f(20, HEIGHT - 60);
+    for (char c : scoreText) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
+    }
+
+    // Render Timer
+    std::string timerText = "Time: " + std::to_string(remainingTime) + "ms";
+    glRasterPos2f(WIDTH - 150, HEIGHT - 30);
+    for (char c : timerText) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
+    }
+
+    // Restore original matrices
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+
+    glEnable(GL_DEPTH_TEST);
+}
+
+void RenderGameOverScreen() {
+    // Disable lighting and enable 2D textures
+    glDisable(GL_LIGHTING);
+    glEnable(GL_TEXTURE_2D);
+
+    // Switch to 2D orthographic projection
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    gluOrtho2D(0.0, WIDTH, 0.0, HEIGHT); // Match the screen dimensions
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // Render the textured background
+    tex_startScreen.Use(); // Use the start screen texture
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+    glTexCoord2f(1.0f, 0.0f); glVertex2f(WIDTH, 0.0f);
+    glTexCoord2f(1.0f, 1.0f); glVertex2f(WIDTH, HEIGHT);
+    glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, HEIGHT);
+    glEnd();
+
+    // Render the text
+    glDisable(GL_TEXTURE_2D); // Disable texture for text
+    glDisable(GL_DEPTH_TEST);
+    glColor3f(1.0f, 0.0f, 0.0f); // Red color for "GAME OVER!"
+
+    const char* gameOverText = "GAME OVER!";
+    glRasterPos2f((WIDTH - glutBitmapLength(GLUT_BITMAP_TIMES_ROMAN_24, (const unsigned char*)gameOverText)) / 2, HEIGHT / 2 + 50);
+    for (const char* c = gameOverText; *c != '\0'; c++) {
+        glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24, *c);
+    }
+
+    glColor3f(1.0f, 1.0f, 1.0f); // White color for instructions
+    const char* restartText = "Press R to Restart";
+    glRasterPos2f((WIDTH - glutBitmapLength(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)restartText)) / 2, HEIGHT / 2 - 20);
+    for (const char* c = restartText; *c != '\0'; c++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+    }
+
+    const char* exitText = "Press ESC to Exit";
+    glRasterPos2f((WIDTH - glutBitmapLength(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)exitText)) / 2, HEIGHT / 2 - 50);
+    for (const char* c = exitText; *c != '\0'; c++) {
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
+    }
+
+    glEnable(GL_TEXTURE_2D); // Re-enable textures
+    glEnable(GL_DEPTH_TEST);
+    // Restore the original projection and modelview matrices
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+}
+
+void RenderFadeEffect() {
+    if (transitionAlpha > 0.0f) {
+        // Disable depth test and lighting to render the fade overlay
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_LIGHTING);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // Render a full-screen quad with the fade color (black)
+        glColor4f(0.0f, 0.0f, 0.0f, transitionAlpha); // Black color with alpha
+
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        gluOrtho2D(-1.0, 1.0, -1.0, 1.0); // Normalized device coordinates for full-screen quad
+
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+
+        glBegin(GL_QUADS);
+        glVertex2f(-1.0f, -1.0f);
+        glVertex2f(1.0f, -1.0f);
+        glVertex2f(1.0f, 1.0f);
+        glVertex2f(-1.0f, 1.0f);
+        glEnd();
+
+        // Restore previous matrices and OpenGL state
+        glPopMatrix();
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+
+        glDisable(GL_BLEND);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_LIGHTING);
+    }
+}
+void UpdateFlickeringLights() {
+    for (size_t i = 0; i < lampLightIntensity.size(); ++i) {
+        // Use a hardcoded sine wave-based flicker pattern
+        float timeFactor =  0.5f * flickerSpeeds[i];
+        lampLightIntensity[i] = 0.7f + 0.3f * sin(timeFactor); // Fixed sine-based intensity
+
+        // Clamp intensity between [0.2, 1.0] to avoid extreme brightness or dimness
+        if (lampLightIntensity[i] < 0.2f) lampLightIntensity[i] = 0.2f;
+        if (lampLightIntensity[i] > 1.0f) lampLightIntensity[i] = 1.0f;
+
+        // Update light properties
+        GLfloat diffuse[] = { lampLightIntensity[i], lampLightIntensity[i], lampLightIntensity[i], 1.0f };
+        GLfloat position[] = { lampPositionsX[i], 9.0f, lampPositionsZ[i], -1.0f };
+
+        GLenum lightId = GL_LIGHT2 + i; // Unique light ID
+        glLightfv(lightId, GL_DIFFUSE, diffuse);
+        glLightfv(lightId, GL_POSITION, position);
+    }
+}
+
+void RenderLamps() {
+    for (size_t i = 0; i < lampPositionsX.size(); ++i) {
+        GLenum lightId = GL_LIGHT1 + i; // Use unique light IDs
+        glEnable(lightId); // Ensure the light is enabled
+
+        glPushMatrix();
+        glTranslatef(lampPositionsX[i], 9.0f, lampPositionsZ[i]);
+        glScalef(0.1f, 0.1f, 0.1f); // Adjust lamp scale
+        model_light.Draw();
+        glPopMatrix();
+    }
+}
+
+void InitializeLamps() {
+    // Example positions for lamps on the ceiling
+    lampPositionsX = { -50.0f, 0.0f, 50.0f }; // Adjust as needed
+    lampPositionsZ = { -50.0f, 0.0f, 50.0f };
+
+    // Initialize light intensity and random flicker speeds
+    lampLightIntensity.resize(lampPositionsX.size(), 1.0f);
+    flickerSpeeds.resize(lampPositionsX.size());
+
+    for (auto& speed : flickerSpeeds) {
+        speed = 1.0f + static_cast<float>(rand() % 50) / 50.0f; // Random speeds between 1.0 and 2.0
+    }
+
+    for (size_t i = 0; i < lampPositionsX.size(); ++i) {
+        GLenum lightId = GL_LIGHT2 + i; // Use GL_LIGHT1, GL_LIGHT2, etc.
+        glEnable(lightId);
+
+        GLfloat ambient[] = { 0.1f, 0.1f, 0.1f, 1.0f };
+        GLfloat diffuse[] = { lampLightIntensity[i], lampLightIntensity[i], lampLightIntensity[i], 1.0f };
+        GLfloat position[] = { lampPositionsX[i], 9.0f, lampPositionsZ[i], 1.0f };
+
+        // Add attenuation for realism
+        glLightf(lightId, GL_CONSTANT_ATTENUATION, 1.0f);
+        glLightf(lightId, GL_LINEAR_ATTENUATION, 0.05f);
+        glLightf(lightId, GL_QUADRATIC_ATTENUATION, 0.01f);
+
+        glLightfv(lightId, GL_AMBIENT, ambient);
+        glLightfv(lightId, GL_DIFFUSE, diffuse);
+        glLightfv(lightId, GL_POSITION, position);
+    }
+}
+
+void myDisplay(void) {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     float pitch_rad = playerPitch * (M_PI / 180.0f);
     float yaw_rad = playerYaw * (M_PI / 180.0f);
@@ -790,89 +1160,235 @@ void myDisplay(void) {
     float lookY = sin(pitch_rad);
     float lookZ = cos(pitch_rad) * sin(yaw_rad);
 
-    if (isThirdPerson) {
-        float camX = playerX - (cos(yaw_rad) * cameraDistance);
-        float camY = playerY + cameraHeight;
-        float camZ = playerZ - (sin(yaw_rad) * cameraDistance);
-
-        gluLookAt(
-            camX, camY, camZ,
-            playerX, playerY + 1.0f, playerZ,
-            0.0f, 1.0f, 0.0f
-        );
+    if (currentGameState == START_SCREEN) {
+        RenderStartScreen();
+        glutSwapBuffers();
+        return;
     }
-    else {
-        gluLookAt(
-            playerX, playerY, playerZ,
-            playerX + lookX, playerY + lookY, playerZ + lookZ,
-            0.0f, 1.0f, 0.0f
-        );
-    }
-
-    RenderSky();
-
-    // Render scene objects
-    RenderGround();
-    RenderWalls();
-    RenderTrees();
-    RenderBarrels();
-   // RenderTargets(); // Render targets
-    RenderBullseyeTargets();    // Draw House
-    glPushMatrix();
-    glTranslatef(0, 0, 20);
-    glScalef(0.7, 0.7, 0.7);
-    model_house.Draw();
-    glPopMatrix();
-
-    // Render player last for proper transparency
-    RenderPlayer();
-    RenderFirstPersonWeapon();
-    RenderBullets();
-    RenderMuzzleFlash();
-
-    if (!isThirdPerson) {
-        // Switch to orthographic projection
-        glMatrixMode(GL_PROJECTION);
-        glPushMatrix();
-        glLoadIdentity();
-        gluOrtho2D(0, WIDTH, 0, HEIGHT);
-
-        glMatrixMode(GL_MODELVIEW);
-        glPushMatrix();
+    else if (currentGameState == LEVEL_1) {
         glLoadIdentity();
 
-        // Disable depth testing and lighting
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_LIGHTING);
+        UpdateLighting(gameTime);
 
-        // Set crosshair color (white)
-        glColor3f(1.0f, 1.0f, 1.0f);
+        if (isThirdPerson) {
+            float camX = playerX - (cos(yaw_rad) * cameraDistance);
+            float camY = playerY + cameraHeight;
+            float camZ = playerZ - (sin(yaw_rad) * cameraDistance);
 
-        // Draw crosshair lines
-        glBegin(GL_LINES);
-        // Horizontal line
-        glVertex2f(WIDTH / 2 - 10, HEIGHT / 2);
-        glVertex2f(WIDTH / 2 + 10, HEIGHT / 2);
-        // Vertical line
-        glVertex2f(WIDTH / 2, HEIGHT / 2 - 10);
-        glVertex2f(WIDTH / 2, HEIGHT / 2 + 10);
-        glEnd();
+            gluLookAt(
+                camX, camY, camZ,
+                playerX, playerY + 1.0f, playerZ,
+                0.0f, 1.0f, 0.0f
+            );
+        }
+        else {
+            gluLookAt(
+                playerX, playerY, playerZ,
+                playerX + lookX, playerY + lookY, playerZ + lookZ,
+                0.0f, 1.0f, 0.0f
+            );
+        }
 
-        // Re-enable depth testing and lighting
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_LIGHTING);
+        RenderSky();
+        // Render scene objects
+        RenderGround();
+        RenderWalls();
+        RenderTrees();
+        RenderBarrels();
 
-        // Restore the original projection and modelview matrices
-        glPopMatrix(); // Pop modelview matrix
-        glMatrixMode(GL_PROJECTION);
-        glPopMatrix(); // Pop projection matrix
-        glMatrixMode(GL_MODELVIEW);
+
+
+        // RenderTargets(); // Render targets
+        RenderBullseyeTargets();    // Draw House
+        glPushMatrix();
+        glTranslatef(0, 0, 20);
+        glScalef(0.7, 0.7, 0.7);
+        model_house.Draw();
+        glPopMatrix();
+
+        // Render player last for proper transparency
+        RenderPlayer();
+        RenderFirstPersonWeapon();
+        RenderBullets();
+        RenderMuzzleFlash();
+
+        if (!isThirdPerson) {
+            // Switch to orthographic projection
+            glMatrixMode(GL_PROJECTION);
+            glPushMatrix();
+            glLoadIdentity();
+            gluOrtho2D(0, WIDTH, 0, HEIGHT);
+
+            glMatrixMode(GL_MODELVIEW);
+            glPushMatrix();
+            glLoadIdentity();
+
+            // Disable depth testing and lighting
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_LIGHTING);
+
+            // Set crosshair color (white)
+            glColor3f(1.0f, 1.0f, 1.0f);
+
+            // Draw crosshair lines
+            glBegin(GL_LINES);
+            // Horizontal line
+            glVertex2f(WIDTH / 2 - 10, HEIGHT / 2);
+            glVertex2f(WIDTH / 2 + 10, HEIGHT / 2);
+            // Vertical line
+            glVertex2f(WIDTH / 2, HEIGHT / 2 - 10);
+            glVertex2f(WIDTH / 2, HEIGHT / 2 + 10);
+            glEnd();
+
+            // Re-enable depth testing and lighting
+            glEnable(GL_DEPTH_TEST);
+            glEnable(GL_LIGHTING);
+
+            // Restore the original projection and modelview matrices
+            glPopMatrix(); // Pop modelview matrix
+            glMatrixMode(GL_PROJECTION);
+            glPopMatrix(); // Pop projection matrix
+            glMatrixMode(GL_MODELVIEW);
+        }
+
+        int currentScore = 0;
+        for (const auto& target : bullseyeTargets) {
+            if (target.isHit) currentScore++;
+        }
+        int totalTargets = bullseyeTargets.size();
+        int remainingTime = static_cast<int>(1080.0f - gameTime); // Assuming a total game time of 360 seconds
+
+        RenderHUD(currentScore, totalTargets, remainingTime);
+
+        glutSwapBuffers();
+    }
+    else if (currentGameState == END_SCREEN_LOSE) {
+        glLoadIdentity();
+        RenderGameOverScreen();
+        glutSwapBuffers();
+    }
+    else if (currentGameState == LEVEL_2) {
+        glLoadIdentity();
+        if (isThirdPerson) {
+            float camX = playerX - (cos(yaw_rad) * cameraDistance);
+            float camY = playerY + cameraHeight;
+            float camZ = playerZ - (sin(yaw_rad) * cameraDistance);
+
+            gluLookAt(
+                camX, camY, camZ,
+                playerX, playerY + 1.0f, playerZ,
+                0.0f, 1.0f, 0.0f
+            );
+        }
+        else {
+            gluLookAt(
+                playerX, playerY, playerZ,
+                playerX + lookX, playerY + lookY, playerZ + lookZ,
+                0.0f, 1.0f, 0.0f
+            );
+        }
+        RenderSky();
+        // Render scene objects
+        RenderGroundL2();
+        RenderCeiling();
+
+        RenderLamps(); // Render lamp models
+        UpdateFlickeringLights(); // Update flickering light intensities
+
+
+        RenderWallsL2();
+       // RenderTrees();
+        RenderTargets();
+        RenderPlayer();
+        RenderFirstPersonWeapon();
+        RenderBullets();
+        RenderMuzzleFlash();
+
+        if (!isThirdPerson) {
+            // Switch to orthographic projection
+            glMatrixMode(GL_PROJECTION);
+            glPushMatrix();
+            glLoadIdentity();
+            gluOrtho2D(0, WIDTH, 0, HEIGHT);
+
+            glMatrixMode(GL_MODELVIEW);
+            glPushMatrix();
+            glLoadIdentity();
+
+            // Disable depth testing and lighting
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_LIGHTING);
+
+            // Set crosshair color (white)
+            glColor3f(1.0f, 1.0f, 1.0f);
+
+            // Draw crosshair lines
+            glBegin(GL_LINES);
+            // Horizontal line
+            glVertex2f(WIDTH / 2 - 10, HEIGHT / 2);
+            glVertex2f(WIDTH / 2 + 10, HEIGHT / 2);
+            // Vertical line
+            glVertex2f(WIDTH / 2, HEIGHT / 2 - 10);
+            glVertex2f(WIDTH / 2, HEIGHT / 2 + 10);
+            glEnd();
+
+            // Re-enable depth testing and lighting
+            glEnable(GL_DEPTH_TEST);
+            glEnable(GL_LIGHTING);
+
+            // Restore the original projection and modelview matrices
+            glPopMatrix(); // Pop modelview matrix
+            glMatrixMode(GL_PROJECTION);
+            glPopMatrix(); // Pop projection matrix
+            glMatrixMode(GL_MODELVIEW);
+        }
+        int level2Score = 0;
+        RenderHUD(level2Score, 100, 1080);
     }
 
-	
-
+    RenderFadeEffect();
     glutSwapBuffers();
+
 }
+
+void resetLevel1() {
+    // Reset game time
+    gameTime = 0.0f;
+
+    // Reset player position and orientation
+    playerX = 0.0f;
+    playerY = 1.8f;
+    playerZ = 5.0f;
+    playerYaw = -90.0f;
+    playerPitch = 0.0f;
+    playerRotation = 180.0f;
+
+    // Reset targets
+    for (auto& target : bullseyeTargets) {
+        target.isHit = false;
+        target.isFalling = false;
+        target.rotationY = 0.0f;
+        target.rotationZ = 0.0f;
+    }
+
+    for (auto& target : targets) {
+        target.isHit = false;
+        target.rotationX = 0.0f;
+        target.isRotating = true; // Reset rotation state
+    }
+
+    // Clear bullets
+    bullets.clear();
+
+    // Reset muzzle flash
+    isMuzzleFlashActive = false;
+    muzzleFlashTimer = 0.0f;
+    recoilOffset = 0.0f;
+
+    // Reset lighting (optional, to avoid leftover effects)
+    UpdateAmbientLight(false);
+}
+
 void myKeyboard(unsigned char key, int x, int y) {
     float yaw_rad = playerYaw * (M_PI / 180.0f);
 
@@ -888,40 +1404,60 @@ void myKeyboard(unsigned char key, int x, int y) {
 
     float newX = playerX;
     float newZ = playerZ;
-
-    switch (key) {
-    case 'w':
-        newX = playerX + lookX * playerSpeed;
-        newZ = playerZ + lookZ * playerSpeed;
-        break;
-    case 's':
-        newX = playerX - lookX * playerSpeed;
-        newZ = playerZ - lookZ * playerSpeed;
-        break;
-    case 'a':
-        newX = playerX - rightX * playerSpeed;
-        newZ = playerZ - rightZ * playerSpeed;
-        break;
-    case 'd':
-        newX = playerX + rightX * playerSpeed;
-        newZ = playerZ + rightZ * playerSpeed;
-        break;
-    case 'v': // Toggle view
-        isThirdPerson = !isThirdPerson;
-        break;
-    case 27: // ESC
-        exit(0);
-        break;
+    if (currentGameState == START_SCREEN) {
+        if (key == 13) { // ENTER key
+            currentGameState = LEVEL_1; // Transition to level 1
+        }
+        else if (key == 27) { // ESC key
+            exit(0);
+        }
+        return;
     }
+    else if (currentGameState == LEVEL_1 || currentGameState == LEVEL_2) {
+        switch (key) {
+        case 'w':
+            newX = playerX + lookX * playerSpeed;
+            newZ = playerZ + lookZ * playerSpeed;
+            break;
+        case 's':
+            newX = playerX - lookX * playerSpeed;
+            newZ = playerZ - lookZ * playerSpeed;
+            break;
+        case 'a':
+            newX = playerX - rightX * playerSpeed;
+            newZ = playerZ - rightZ * playerSpeed;
+            break;
+        case 'd':
+            newX = playerX + rightX * playerSpeed;
+            newZ = playerZ + rightZ * playerSpeed;
+            break;
+        case 'v': // Toggle view
+            isThirdPerson = !isThirdPerson;
+            break;
+        case 27: // ESC
+            exit(0);
+            break;
+        }
 
-    // Check boundaries before updating position
-    if (newX >= groundMin && newX <= groundMax &&
-        newZ >= groundMin && newZ <= groundMax) {
-        playerX = newX;
-        playerZ = newZ;
+        // Check boundaries before updating position
+        if (newX >= groundMin && newX <= groundMax &&
+            newZ >= groundMin && newZ <= groundMax) {
+            playerX = newX;
+            playerZ = newZ;
+        }
     }
-
+    else if (currentGameState == END_SCREEN_LOSE) {
+        if (key == 'r') {
+            resetLevel1();
+            currentGameState = LEVEL_1; // Transition to level 1
+        }
+        else if (key == 27) { // ESC key
+            exit(0);
+        }
+    }
     glutPostRedisplay();
+
+    
 }
 void LoadAssets() {
     model_house.Load("Models/house/house.3DS");
@@ -930,8 +1466,8 @@ void LoadAssets() {
     model_rifle.Load("Models/rifle/rifle.3ds");  // Load the rifle model
     tex_ground.Load("Textures/ground.bmp");
     model_barrel.Load("Models/barrel/barrel.3ds");
-	
-	model_bullet.Load("Models/bullet/Bullet.3ds");
+
+    model_bullet.Load("Models/bullet/Bullet.3ds");
     if (!model_target1.LoadFromFile("Models/target2/target2.obj")) {
         std::cerr << "Failed to load model!" << std::endl;
     }
@@ -952,7 +1488,11 @@ void LoadAssets() {
     }
 
     bullseye.Load("Textures/bullseye.bmp");
-
+    tex_startScreen.Load("Textures/startGame.bmp");
+    ground_l2.Load("Textures/groundL2.bmp");
+    ceiling.Load("Textures/ceiling.bmp");
+    wall2.Load("Textures/wall_l2.bmp");
+    model_light.Load("Models/lamp/lamps.3ds");
 }
 void UpdateTargets() {
     for (auto& target : targets) {
@@ -976,7 +1516,7 @@ void UpdateTargets() {
         }
     }
 }
-bool CheckCollision(const Bullet & bullet, const Target1 & target) {
+bool CheckCollision(const Bullet& bullet, const Target1& target) {
     // Calculate the squared distance between the bullet and the target
     float dx = bullet.x - target.x;
     float dz = bullet.z - target.z;
@@ -1059,37 +1599,110 @@ void specialKeys(int key, int x, int y) {
     }
     glutPostRedisplay();
 }
-void myIdle() {
-    UpdateLighting();
-    UpdateTargets(); // Ensure targets update during idle time
-	UpdateBullets(); 
-    if (isMuzzleFlashActive) {
-        muzzleFlashTimer -= 0.01f;
-        if (muzzleFlashTimer <= 0.0f) {
-            isMuzzleFlashActive = false;
-            UpdateAmbientLight(false); // Restore ambient light
+void myInit() {
+    glClearColor(0.0, 0.0, 0.0, 0.0);
 
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(45.0, (GLdouble)WIDTH / (GLdouble)HEIGHT, 0.1, 200.0);
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // Enable necessary features
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_NORMALIZE);
+    glEnable(GL_COLOR_MATERIAL);
+
+    // Setup lighting
+    GLfloat ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
+    GLfloat diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f };
+    GLfloat position[] = { 0.0f, 10.0f, 0.0f, 1.0f };
+    glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+    glLightfv(GL_LIGHT0, GL_POSITION, position);
+
+    InitializeLamps(); // Add this call
+
+}
+void myIdle() {
+    if(currentGameState == LEVEL_1) UpdateLighting(gameTime); // Update lighting
+    if (currentGameState == LEVEL_2) UpdateFlickeringLights();
+
+    if (!isTransitioningToLevel2) {
+        UpdateTargets();
+        UpdateBullets();
+        UpdateBullseyeTargets();
+
+        if (isMuzzleFlashActive) {
+            muzzleFlashTimer -= 0.01f;
+            if (muzzleFlashTimer <= 0.0f) {
+                isMuzzleFlashActive = false;
+                UpdateAmbientLight(false);
+            }
+        }
+
+        gameTime += (timeSpeed);
+
+        // Check transition to Level 2
+        int currentScore = 0;
+        for (const auto& target : bullseyeTargets) {
+            if (target.isHit) currentScore++;
+        }
+
+        if (currentGameState == LEVEL_1 && currentScore == 1) {
+            isTransitioningToLevel2 = true; // Start the transition
+        }
+        else if (currentGameState == LEVEL_1 && gameTime >= 1080.0f) {
+            currentGameState = END_SCREEN_LOSE; // Time ran out
+            std::cout << "Game Over! Final Score: " << currentScore << "/15\n";
         }
     }
-    UpdateBullseyeTargets();
+    else {
+        if (isTransitioningToLevel2) {
+            // Fade-out phase
+            transitionAlpha += transitionSpeed; // Increase alpha (fade to black)
+            if (transitionAlpha >= 1.0f) {
+                transitionAlpha = 1.0f; // Fully black
+
+                // Reset for Level 2
+                resetLevel1();               // Reset targets and player position
+                currentGameState = LEVEL_2;  // Move to Level 2
+                isTransitioningToLevel2 = false; // End the transition
+            }
+        }
+       
+    }
+    if (currentGameState == LEVEL_2 && transitionAlpha != 0) {
+        // Fade-in phase
+        transitionAlpha -= transitionSpeed; // Decrease alpha (fade back in)
+        if (transitionAlpha < 0.0f) {
+            transitionAlpha = 0.0f; // Fully visible
+        }
+    }
     glutPostRedisplay();
 }
+
+
+
 void main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(WIDTH, HEIGHT);
-    glutCreateWindow("3D Scene");
+    glutCreateWindow("Die Hard!");
 
     myInit();
     LoadAssets();
-
     glutSpecialFunc(specialKeys);        // Register special keys callback
     glutDisplayFunc(myDisplay);
     glutKeyboardFunc(myKeyboard);
     glutPassiveMotionFunc(myMouseMotion);  // Enable mouse motion callback
-	glutMouseFunc(myMouse);  // Enable mouse button callback
+    glutMouseFunc(myMouse);  // Enable mouse button callback
     // Center the mouse cursor
     glutWarpPointer(WIDTH / 2, HEIGHT / 2);
+
     glutIdleFunc(myIdle);
     glutMainLoop();
 }
