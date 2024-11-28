@@ -52,7 +52,8 @@ Model_3DS model_tree;
 Model_3DS model_player;
 Model_3DS model_rifle;  // New rifle model
 Model_3DS model_barrel;
-OBJModel model_target1;
+OBJModel model_target1;;
+Model_3DS model_bullet;
 
 GLTexture tex_sky;  // Declare the sky texture globally
 
@@ -61,19 +62,20 @@ struct Target1 {
     float scale;      // Scaling factor
     float rotationX;  // Rotation about the X-axis
     bool isRotating;  // Whether the target rotates
+    bool isHit;       // Whether the target is hit 
 };
 
 std::vector<Target1> targets = {
-    {10.0f, -20.0f, 0.2f, 0.0f, true},
-    {-30.0f, 15.0f, 0.2f, 0.0f, false},
-    {35.0f, -40.0f, 0.2f, 0.0f, true},
-    {60.0f, -70.0f, 0.2f, 0.0f, true},
-    {-50.0f, 40.0f, 0.2f, 0.0f, false},
-    {90.0f, 5.0f, 0.2f, 0.0f, true},
-    {-75.0f, -60.0f, 0.2f, 0.0f, false},
-    {50.0f, 80.0f, 0.2f, 0.0f, true},
-    {-90.0f, -40.0f, 0.2f, 0.0f, false},
-    {100.0f, 20.0f, 0.2f, 0.0f, true}
+    {10.0f, -20.0f, 0.2f, 0.0f, true, false},
+    {-30.0f, 15.0f, 0.2f, 0.0f, false, false},
+    {35.0f, -40.0f, 0.2f, 0.0f, true, false},
+    {60.0f, -70.0f, 0.2f, 0.0f, true, false},
+    {-50.0f, 40.0f, 0.2f, 0.0f, false, false},
+    {90.0f, 5.0f, 0.2f, 0.0f, true, false},
+    {-75.0f, -60.0f, 0.2f, 0.0f, false, false},
+    {50.0f, 80.0f, 0.2f, 0.0f, true, false},
+    {-90.0f, -40.0f, 0.2f, 0.0f, false, false},
+    {100.0f, 20.0f, 0.2f, 0.0f, true, false}
 };
 
 // Barrels - Level 1
@@ -121,10 +123,43 @@ std::vector<TreePosition> trees = {
 };
 
 
+struct Bullet {
+	float x, y, z;  // Position
+	float directionX, directionY, directionZ; // where the bullet is going
+    float  speed; // Velocity
+};
+
+std::vector<Bullet> bullets;
+
+
 // Textures
 GLTexture tex_ground;
 
 const float M_PI = 3.14159265358979323846;
+
+//=======================================================================
+// shoot function creates a new bullet every time it is called
+//=======================================================================
+
+void Shoot() {
+    Bullet bullet;
+	// offset the bullet so it comes out of the gun
+    float pitchRadians = playerPitch * (M_PI / 180.0f);
+    float yawRadians = playerYaw * (M_PI / 180.0f);
+	
+
+    bullet.x = playerX + cos(pitchRadians) * cos(yawRadians); ;
+    bullet.y = playerY + sin(pitchRadians);
+    bullet.z = playerZ + cos(pitchRadians) * sin(yawRadians);
+    
+
+    bullet.directionX = cos(pitchRadians) * cos(yawRadians); // Horizontal component with pitch
+    bullet.directionY = sin(pitchRadians);                  // Vertical component with pitch
+    bullet.directionZ = cos(pitchRadians) * sin(yawRadians); // Horizontal component with yaw
+    bullet.speed = 0.5f; // Adjust speed as needed we can increase it a bit
+
+    bullets.push_back(bullet);
+}
 
 //=======================================================================
 // Update Camera Direction
@@ -173,6 +208,15 @@ void myMouseMotion(int x, int y) {
 
     glutPostRedisplay();
 }
+// shooting call back 
+void myMouse(int button, int state, int x, int y) {
+	if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+		Shoot();
+	}
+}
+
+
+
 //=======================================================================
 // Initialize Function
 //=======================================================================
@@ -309,6 +353,9 @@ void RenderBarrels() {
 }
 void RenderTargets() {
     for (const auto& target : targets) {
+        if (target.isHit) continue; // Skip rendering hit targets
+
+        
         glPushMatrix();
 
         // Position the target
@@ -326,6 +373,45 @@ void RenderTargets() {
         glPopMatrix();
     }
 }
+
+
+
+
+
+void RenderBullets() {
+    for (const auto& bullet : bullets) {
+        glPushMatrix();
+
+        // Translate to the bullet's current position
+        glTranslatef(bullet.x, bullet.y, bullet.z);
+
+        // Calculate yaw (rotation around Y-axis)
+        float yawRadians = atan2(bullet.directionZ, bullet.directionX);
+        float yawDegrees = yawRadians * (180.0f / M_PI); // Convert to degrees
+
+        // Calculate pitch (rotation around X-axis)
+        float horizontalLength = sqrt(bullet.directionX * bullet.directionX + bullet.directionZ * bullet.directionZ);
+        float pitchRadians = atan2(bullet.directionY, horizontalLength);
+        float pitchDegrees = pitchRadians * (180.0f / M_PI); // Convert to degrees
+
+        // Apply rotations to align the bullet with its direction
+        
+        glRotatef(pitchDegrees, 1.0f, 0.0f, 0.0f); // Pitch rotation (around X-axis)
+		glRotatef(-yawDegrees, 0.0f, 1.0f, 0.0f); // Yaw rotation (around Y-axis) keep it negative or the bullet tip will point towards the player
+       
+        glScalef(0.001f, 0.001f, 0.001f); // use diffrent scale for debugging
+
+
+        // Draw the bullet model
+        model_bullet.Draw();
+
+        glPopMatrix();
+    }
+}
+
+
+
+
 
 
 void RenderSky() {
@@ -425,6 +511,7 @@ void myDisplay(void) {
     // Render player last for proper transparency
     RenderPlayer();
     RenderFirstPersonWeapon();
+    RenderBullets();
 
     if (!isThirdPerson) {
         // Switch to orthographic projection
@@ -464,6 +551,8 @@ void myDisplay(void) {
         glPopMatrix(); // Pop projection matrix
         glMatrixMode(GL_MODELVIEW);
     }
+
+	
 
     glutSwapBuffers();
 }
@@ -536,6 +625,8 @@ void LoadAssets() {
     tex_ground.Load("Textures/ground.bmp");
     tex_sky.Load("Textures/blu-sky-3.bmp"); // Load the sky texture
     model_barrel.Load("Models/barrel/barrel.3ds");
+	
+	model_bullet.Load("Models/bullet/Bullet.3ds");
     if (!model_target1.LoadFromFile("Models/target2/target2.obj")) {
         std::cerr << "Failed to load model!" << std::endl;
         // Handle error
@@ -564,6 +655,55 @@ void UpdateTargets() {
         }
     }
 }
+
+
+bool CheckCollision(const Bullet & bullet, const Target1 & target) {
+    // Calculate the squared distance between the bullet and the target
+    float dx = bullet.x - target.x;
+    float dz = bullet.z - target.z;
+    float distanceSquared = dx * dx + dz * dz;
+
+    // Calculate the squared radius of the target
+    float targetRadius = target.scale * 5.0f; // Adjust the multiplier as needed
+    float radiusSquared = targetRadius * targetRadius;
+
+    // Check if the distance is less than or equal to the radius
+    return distanceSquared <= radiusSquared;
+}
+
+
+
+
+void UpdateBullets() {
+    for (auto bulletIt = bullets.begin(); bulletIt != bullets.end();) {
+        // Update bullet position
+        bulletIt->x += bulletIt->directionX * bulletIt->speed;
+        bulletIt->y += bulletIt->directionY * bulletIt->speed;
+        bulletIt->z += bulletIt->directionZ * bulletIt->speed;
+
+        bool collisionDetected = false;
+
+        // Check for collision with each target
+        for (auto& target : targets) {
+            if (!target.isHit && CheckCollision(*bulletIt, target)) {
+                target.isHit = true; // Mark the target as hit
+                collisionDetected = true;
+                std::cout << "Hit target at (" << target.x << ", " << target.z << ")\n";
+                break; // Bullet only hits one target
+            }
+        }
+
+        // Remove bullet if it hits a target
+        if (collisionDetected) {
+            bulletIt = bullets.erase(bulletIt);
+        }
+        else {
+            ++bulletIt; // Move to the next bullet
+        }
+    }
+}
+
+
 
 
 //=======================================================================
@@ -597,7 +737,7 @@ void specialKeys(int key, int x, int y) {
 void myIdle() {
     UpdateLighting();
     UpdateTargets(); // Ensure targets update during idle time
-
+	UpdateBullets(); // Update bullet positions
     glutPostRedisplay();
 }
 //=======================================================================
@@ -616,7 +756,7 @@ void main(int argc, char** argv) {
     glutDisplayFunc(myDisplay);
     glutKeyboardFunc(myKeyboard);
     glutPassiveMotionFunc(myMouseMotion);  // Enable mouse motion callback
-
+	glutMouseFunc(myMouse);  // Enable mouse button callback
     // Center the mouse cursor
     glutWarpPointer(WIDTH / 2, HEIGHT / 2);
     glutIdleFunc(myIdle);
