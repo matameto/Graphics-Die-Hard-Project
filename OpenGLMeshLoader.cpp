@@ -9,6 +9,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <SDL_mixer.h>
+
 enum GameState {
     START_SCREEN,
     LEVEL_1,
@@ -57,7 +58,7 @@ float transitionSpeed = 0.01f;       // Speed of the fade effect
 
 
 float gameTime = 0.0f;       // Game time in seconds
-float timeSpeed = 0.1f;      // Speed of time progression (adjust for faster/slower transitions)
+float timeSpeed = 0.1f;      
 float sunAngle = 0.0f;       // Angle of the sun (degrees)
 float maxIntensity = 1.0f;   // Maximum light intensity
 float minIntensity = 0.1f;   // Minimum light intensity
@@ -95,95 +96,91 @@ GLTexture wall2;
 GLTexture targetTexture;
 
 
-
+// Sound variables : 
+Mix_Chunk* shootSound = nullptr;
+Mix_Chunk* hitSound = nullptr;
+Mix_Music* idleMusic = nullptr;
+Mix_Chunk* thudSound = nullptr;
 
 struct CircularTarget {
-    float x, y, z;      // Position
-    float radius;       // Radius of the circular target
-    bool isHit;         // Whether the target is hit
-    bool isFalling;     // Whether the target is falling
-    float rotationY;    // Rotation about Y-axis (spin)
-    float rotationZ;    // Rotation about Z-axis (falling)
+    float x, y, z;      
+    float radius;       
+    bool isHit;         
+    bool isFalling;     
+    float rotationY;    
+    float rotationZ;    
 };
 struct Target1 {
-    float x, z;       // X and Z position on the ground
-    float scale;      // Scaling factor
-    float rotationX;  // Rotation about the X-axis
-    bool isRotating;  // Whether the target rotates
-    bool isHit = false;   // Whether the target is hit
-    float rotationY = 0.0f; // Spin rotation when hit
-    float fallAngle = 0.0f; // Fall angle when hit
+    float x, z;       
+    float scale;      
+    float rotationX;  
+    bool isRotating;  
+    bool isHit = false;   
+    float rotationY = 0.0f; 
+    float fallAngle = 0.0f; 
     bool isDisappearing = false; // Shrinking state
 };
 
 struct BarrelPosition {
-    float x, z;     // X and Z position on the ground
-    float scale;    // Scaling factor
-    float rotation; // Rotation angle
+    float x, z;     
+    float scale;    
+    float rotation; 
 };
+
 struct TreePosition {
     float x, z;
     float scale;
     float rotation;
 };
 struct Bullet {
-    float x, y, z;  // Position
+    float x, y, z;  
     float directionX, directionY, directionZ; // where the bullet is going
     float  speed; // Velocity
 };
 struct Crate {
-    float x, y, z;   // Position
-    float scale;     // Uniform scaling factor
-    float rotation;  // Rotation angle
+    float x, y, z;   
+    float scale;     
+    float rotation; 
 };
 struct Rubbish {
-    float x, y, z;     // Position
-    float scale;       // Uniform scale factor
-    float rotation;    // Rotation angle (e.g., about the Y-axis)
+    float x, y, z;     
+    float scale;       
+    float rotation;    
 };
 
 struct BouncingTarget {
-    float x, y, z;    // Position
-    float radius;     // Sphere radius
-    float bounceSpeed; // Speed of the bounce
-    float bounceHeight; // Maximum height of the bounce
-    float timeOffset;  // Offset to differentiate motion
-    bool isHit = false;   // Whether the target is hit
-    float scale = 1.0f;   // Scale for pop animation
-    bool isDisappearing = false; // Start shrinking when hit
+    float x, y, z;    
+    float radius;     
+    float bounceSpeed; 
+    float bounceHeight; 
+    float timeOffset; 
+    bool isHit = false;   
+    float scale = 1.0f;   
+    bool isDisappearing = false; 
 };
 
 std::vector<BouncingTarget> bouncingTargets = {
-    {60.0f, 0.0f, -60.0f, 1.2f, 0.2f, 0.6f, 1.5f},  // Reduced bounceSpeed
-    {-50.0f, 0.0f, 50.0f, 1.0f, 0.2f, 0.5f, 0.7f},  // Reduced bounceSpeed
-    {80.0f, 0.0f, 80.0f, 0.9f, 0.3f, 0.4f, 1.2f},   // Reduced bounceSpeed
-    {-80.0f, 0.0f, -80.0f, 1.4f, 0.2f, 0.3f, 1.0f}, // Reduced bounceSpeed
-    {40.0f, 0.0f, -70.0f, 0.7f, 0.25f, 0.5f, 0.8f}, // Reduced bounceSpeed
-    {-70.0f, 0.0f, 40.0f, 1.1f, 0.2f, 0.4f, 0.6f}   // Reduced bounceSpeed
+    {60.0f, 0.0f, -60.0f, 1.2f, 0.2f, 0.6f, 1.5f},  
+    {-50.0f, 0.0f, 50.0f, 1.0f, 0.2f, 0.5f, 0.7f},  
+    {80.0f, 0.0f, 80.0f, 0.9f, 0.3f, 0.4f, 1.2f},   
+    {-80.0f, 0.0f, -80.0f, 1.4f, 0.2f, 0.3f, 1.0f},
+    {40.0f, 0.0f, -70.0f, 0.7f, 0.25f, 0.5f, 0.8f}, 
+    {-70.0f, 0.0f, 40.0f, 1.1f, 0.2f, 0.4f, 0.6f}   
 };
-
-
-
-
 
 std::vector<Rubbish> rubbishObjects = {
-    {15.0f, -0.4f, -25.0f, 0.5f * 3.0f, 10.0f},  // Near bottom-left
-    {-45.0f, -0.4f, -50.0f, 0.7f * 3.0f, 120.0f}, // Far bottom-left
-    {80.0f, -0.4f, -30.0f, 0.9f * 3.0f, 90.0f},   // Far bottom-right
-
-    // Additional rubbish around edges of the map
-    {95.0f, -0.4f, -95.0f, 0.6f * 3.0f, 45.0f},   // Top-right corner
-    {-95.0f, -0.4f, -95.0f, 0.8f * 3.0f, 30.0f},  // Top-left corner
-    {-95.0f, -0.4f, 95.0f, 0.4f * 3.0f, 150.0f},  // Bottom-left corner
-    {95.0f, -0.4f, 95.0f, 1.0f * 3.0f, 300.0f},   // Bottom-right corner
-
-    {50.0f, -0.4f, -100.0f, 0.6f * 3.0f, 60.0f},  // Mid top edge
-    {-50.0f, -0.4f, -100.0f, 0.7f * 3.0f, 75.0f}, // Mid left edge
-    {50.0f, -0.4f, 100.0f, 0.5f * 3.0f, 20.0f},   // Mid bottom edge
-    {-50.0f, -0.4f, 100.0f, 0.9f * 3.0f, 90.0f},  // Mid right edge
+    {15.0f, -0.4f, -25.0f, 0.5f * 3.0f, 10.0f}, 
+    {-45.0f, -0.4f, -50.0f, 0.7f * 3.0f, 120.0f}, 
+    {80.0f, -0.4f, -30.0f, 0.9f * 3.0f, 90.0f},   
+    {95.0f, -0.4f, -95.0f, 0.6f * 3.0f, 45.0f},  
+    {-95.0f, -0.4f, -95.0f, 0.8f * 3.0f, 30.0f},  
+    {-95.0f, -0.4f, 95.0f, 0.4f * 3.0f, 150.0f},  
+    {95.0f, -0.4f, 95.0f, 1.0f * 3.0f, 300.0f},  
+    {50.0f, -0.4f, -100.0f, 0.6f * 3.0f, 60.0f},  
+    {-50.0f, -0.4f, -100.0f, 0.7f * 3.0f, 75.0f}, 
+    {50.0f, -0.4f, 100.0f, 0.5f * 3.0f, 20.0f},   
+    {-50.0f, -0.4f, 100.0f, 0.9f * 3.0f, 90.0f},  
 };
-
-
 
 std::vector<Crate> crates = {
     {10.0f, 0.0f, -20.0f, 0.8f, 0.0f},
@@ -195,17 +192,15 @@ std::vector<Crate> crates = {
     {-30.0f, 0.0f, 10.0f, 0.6f, 120.0f}
 };
 
-
 std::vector<Target1> targets = {
-    {10.0f, -25.0f, 0.2f, 0.0f, true, false},   // Target 1 behind Crate 1
-    {-15.0f, 30.0f, 0.2f, 0.0f, false, false}, // Target 2 behind Crate 2
-    {30.0f, -45.0f, 0.2f, 0.0f, true, false},  // Target 3 behind Crate 3
-    {50.0f, 10.0f, 0.2f, 0.0f, true, false},   // Target 4 behind Crate 4
-    {-25.0f, -40.0f, 0.2f, 0.0f, false, false},// Target 5 behind Crate 5
-    {20.0f, 25.0f, 0.2f, 0.0f, true, false},   // Target 6 behind Crate 6
-    {-30.0f, 5.0f, 0.2f, 0.0f, false, false}   // Target 7 behind Crate 7
+    {10.0f, -25.0f, 0.2f, 0.0f, true, false},   
+    {-15.0f, 30.0f, 0.2f, 0.0f, false, false}, 
+    {30.0f, -45.0f, 0.2f, 0.0f, true, false},  
+    {50.0f, 10.0f, 0.2f, 0.0f, true, false},   
+    {-25.0f, -40.0f, 0.2f, 0.0f, false, false},
+    {20.0f, 25.0f, 0.2f, 0.0f, true, false},   
+    {-30.0f, 5.0f, 0.2f, 0.0f, false, false}   
 };
-
 
 std::vector<BarrelPosition> barrels = {
     {15.0f, -15.0f, 0.001f, 0.0f},
@@ -215,28 +210,25 @@ std::vector<BarrelPosition> barrels = {
     {-60.0f, 50.0f, 0.001f, 270.0f},
     {100.0f, 15.0f, 0.001f, 30.0f}
 };
+
 std::vector<CircularTarget> bullseyeTargets = {
-    // Targets on top of trees
     {15.0f, 7.0f, -30.0f, 2.5f, false, false, 0.0f, 0.0f},
     {35.0f, 10.0f, -50.0f, 1.8f, false, false, 0.0f, 0.0f},
     {-45.0f, 6.0f, 25.0f, 2.0f, false, false, 0.0f, 0.0f},
     {10.0f, 8.0f, -20.0f, 2.5f, false, false, 0.0f, 0.0f},
     {-30.0f, 9.0f, 30.0f, 1.8f, false, false, 0.0f, 0.0f},
-
-    // Ground targets
     {-20.0f, 2.5f, 10.0f, 3.0f, false, false, 0.0f, 0.0f},
     {0.0f, 2.0f, -15.0f, 2.8f, false, false, 0.0f, 0.0f},
     {40.0f, 2.5f, 5.0f, 3.5f, false, false, 0.0f, 0.0f},
     {-35.0f, 3.0f, -25.0f, 3.0f, false, false, 0.0f, 0.0f},
     {50.0f, 3.5f, -10.0f, 3.2f, false, false, 0.0f, 0.0f},
-
-    // Additional mix
-    {-55.0f, 5.0f, -15.0f, 1.8f, false, false, 0.0f, 0.0f}, // Tree
-    {60.0f, 2.8f, -30.0f, 3.3f, false, false, 0.0f, 0.0f},  // Ground
-    {-20.0f, 6.5f, 40.0f, 2.2f, false, false, 0.0f, 0.0f},  // Tree
-    {15.0f, 3.0f, -50.0f, 3.1f, false, false, 0.0f, 0.0f},   // Ground
-    {65.0f, 7.0f, 20.0f, 2.5f, false, false, 0.0f, 0.0f},   // Tree
+    {-55.0f, 5.0f, -15.0f, 1.8f, false, false, 0.0f, 0.0f}, 
+    {60.0f, 2.8f, -30.0f, 3.3f, false, false, 0.0f, 0.0f},  
+    {-20.0f, 6.5f, 40.0f, 2.2f, false, false, 0.0f, 0.0f},  
+    {15.0f, 3.0f, -50.0f, 3.1f, false, false, 0.0f, 0.0f},   
+    {65.0f, 7.0f, 20.0f, 2.5f, false, false, 0.0f, 0.0f},   
 };
+
 std::vector<TreePosition> trees = {
     {20.0f, -20.0f, 0.5f, 0.0f},
     {-40.0f, -30.0f, 0.6f, 45.0f},
@@ -255,15 +247,15 @@ std::vector<TreePosition> trees = {
     {130.0f, 140.0f, 0.4f, 240.0f},
     {-70.0f, 130.0f, 0.5f, 70.0f}
 };
+
 float lastUpdateTime = 0.0f;  // Tracks the last time the bouncing targets were updated
 
 std::vector<Bullet> bullets;
 
-// For flickering lights
-std::vector<GLfloat> lampPositionsX;  // X positions of the lamps
-std::vector<GLfloat> lampPositionsZ;  // Z positions of the lamps
-std::vector<GLfloat> lampLightIntensity; // Current light intensity for each lamp
-std::vector<float> flickerSpeeds;     // Flickering speeds for randomness
+std::vector<GLfloat> lampPositionsX;  
+std::vector<GLfloat> lampPositionsZ;  
+std::vector<GLfloat> lampLightIntensity; 
+std::vector<float> flickerSpeeds;     
 
 
 bool initAudio() {
@@ -272,7 +264,6 @@ bool initAudio() {
         return false;
     }
 
-    // Initialize SDL_Mixer
     if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
         std::cerr << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << "\n";
         return false;
@@ -280,17 +271,10 @@ bool initAudio() {
     return true;
 }
 
-// Sound variables : 
-Mix_Chunk* shootSound = nullptr;
-Mix_Chunk* hitSound = nullptr; 
-Mix_Music* idleMusic = nullptr;
-Mix_Chunk* thudSound = nullptr; 
-
-
 void PlayIdleMusic() {
     if (idleMusic != nullptr) {
-        if (Mix_PlayingMusic() == 0) { // Play only if no music is currently playing
-            Mix_PlayMusic(idleMusic, -1); // Loop indefinitely
+        if (Mix_PlayingMusic() == 0) {
+            Mix_PlayMusic(idleMusic, -1); 
             std::cout << "Playing idle music.\n";
         }
     }
@@ -300,12 +284,11 @@ void PlayIdleMusic() {
 }
 
 void StopIdleMusic() {
-    if (Mix_PlayingMusic() != 0) { // If music is playing
-        Mix_HaltMusic(); // Stop the music
+    if (Mix_PlayingMusic() != 0) { 
+        Mix_HaltMusic(); 
         std::cout << "Idle music stopped.\n";
     }
 }
-
 
 void UpdateBouncingTargets() {
     for (auto& target : bouncingTargets) {
@@ -318,7 +301,6 @@ void UpdateBouncingTargets() {
             }
         }
         else if (target.isHit) {
-            // Popping animation: scale up and down
             float popSpeed = 5.0f; // Speed of popping animation
             target.scale = 1.0f + 0.2f * sin(gameTime * popSpeed);
         }
@@ -329,20 +311,16 @@ void UpdateBouncingTargets() {
     }
 }
 
-
-
-
 void RenderBouncingTargets() {
     glEnable(GL_TEXTURE_2D);
     targetTexture.Use();
 
     for (const auto& target : bouncingTargets) {
-        if (target.scale <= 0.0f) continue; // Skip fully disappeared targets
+        if (target.scale <= 0.0f) continue;
 
         glPushMatrix();
         glTranslatef(target.x, target.y + 1.5f, target.z);
-        glScalef(target.scale, target.scale, target.scale); // Adjust for popping
-
+        glScalef(target.scale, target.scale, target.scale); 
         GLUquadric* quad = gluNewQuadric();
         gluQuadricTexture(quad, GL_TRUE);
         gluSphere(quad, target.radius, 32, 32);
@@ -375,7 +353,6 @@ void CalculateWeaponTipPosition(float& x, float& y, float& z) {
     float weaponOffsetY = -0.2f; // Slight Y offset
     float weaponOffsetZ = weaponLength;
 
-    // Transform local offsets to world coordinates
     x = playerX +
         cos(yawRadians) * weaponOffsetZ -
         sin(yawRadians) * weaponOffsetX;
@@ -388,17 +365,16 @@ void CalculateWeaponTipPosition(float& x, float& y, float& z) {
         sin(yawRadians) * weaponOffsetZ +
         cos(yawRadians) * weaponOffsetX;
 }
+
 void CalculateMuzzleFlashPosition(float& x, float& y, float& z) {
     float pitchRadians = playerPitch * (PI / 180.0f);
     float yawRadians = playerYaw * (PI / 180.0f);
 
-    // More precise weapon tip offset in local weapon coordinates
-    float weaponLength = 2.1f;  // Adjust based on your rifle model's orientation
+    float weaponLength = 2.1f; 
     float weaponOffsetX = 0.3f;
     float weaponOffsetY = -0.2f;
     float weaponOffsetZ = weaponLength;
 
-    // Transform local offsets to world coordinates
     x = playerX +
         cos(yawRadians) * weaponOffsetZ -
         sin(yawRadians) * weaponOffsetX;
@@ -411,6 +387,7 @@ void CalculateMuzzleFlashPosition(float& x, float& y, float& z) {
         sin(yawRadians) * weaponOffsetZ +
         cos(yawRadians) * weaponOffsetX;
 }
+
 void Shoot() {
     Bullet bullet;
     float pitchRadians = playerPitch * (PI / 180.0f);
@@ -424,7 +401,7 @@ void Shoot() {
     bullet.directionY = sin(pitchRadians);
     bullet.directionZ = cos(pitchRadians) * sin(yawRadians);
 
-    bullet.speed = 1.5f; // Adjust speed as needed
+    bullet.speed = 1.5f; 
 
     bullets.push_back(bullet);
     if (shootSound != nullptr) {
@@ -437,12 +414,10 @@ void Shoot() {
   
 }
 bool CheckBullseyeCollision(const Bullet& bullet, const CircularTarget& target) {
-    // Compute the 2D distance between the bullet and the target's center
     float dx = bullet.x - target.x;
     float dz = bullet.z - target.z;
     float distanceSquared = dx * dx + dz * dz;
 
-    // Check if the bullet is within the target's radius
     return distanceSquared <= target.radius * target.radius;
 }
 void UpdateCamera() {
@@ -487,6 +462,7 @@ void myMouseMotion(int x, int y) {
 
     glutPostRedisplay();
 }
+
 void myMouse(int button, int state, int x, int y) {
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
         Shoot();
@@ -508,10 +484,7 @@ void RenderFirstPersonWeapon() {
 
 
     // Position the weapon
-    glTranslatef(0.3f, -0.4f, -0.9f);  // Adjust these values to position the weapon
-
-    // Apply weapon rotation based on camera look direction
-
+    glTranslatef(0.3f, -0.4f, -0.9f);  
 
     // Rotate and scale the weapon model
     glScalef(0.0005f, 0.0005f, 0.0005f);
@@ -542,6 +515,7 @@ void RenderMuzzleFlashLight() {
     // Ensure the light is disabled after rendering
     glDisable(GL_LIGHT1);
 }
+
 void RenderMuzzleFlash() {
     if (!isMuzzleFlashActive) return;
 
@@ -573,6 +547,7 @@ void RenderMuzzleFlash() {
     glDisable(GL_BLEND);
     glPopMatrix();
 }
+
 void RenderCeiling() {
     float ceilingHeight = 10.0f;
 
@@ -595,15 +570,14 @@ void RenderCeiling() {
     glDisable(GL_TEXTURE_2D);
 }
 
-
 void RenderWalls() {
     float groundMin = -100.0f;
     float groundMax = 100.0f;
-    float wallHeight = 10.0f;  // Height of the walls
-    float wallThickness = 1.0f; // Thickness of the walls
+    float wallHeight = 10.0f;  
+    float wallThickness = 1.0f; 
 
     // glEnable(GL_TEXTURE_2D);
-     //glBindTexture(GL_TEXTURE_2D, tex_wall.texture[0]);
+    //glBindTexture(GL_TEXTURE_2D, tex_wall.texture[0]);
 
      // North Wall (along Z-axis)
     glPushMatrix();
@@ -697,7 +671,6 @@ void RenderWalls() {
     glDisable(GL_TEXTURE_2D);
 }
 
-
 void RenderWallsL2() {
     float groundMin = -100.0f;
     float groundMax = 100.0f;
@@ -707,7 +680,6 @@ void RenderWallsL2() {
 
     wall2.Use();
 
-    // Outer Walls (Same as before)
     // North Wall
     glPushMatrix();
     glTranslatef(0, wallHeight / 2, groundMax);
@@ -817,6 +789,7 @@ void RenderPlayer() {
     model_player.Draw();
     glPopMatrix();
 }
+
 void RenderTrees() {
     for (const auto& tree : trees) {
         glPushMatrix();
@@ -827,6 +800,7 @@ void RenderTrees() {
         glPopMatrix();
     }
 }
+
 void RenderBarrels() {
     for (const auto& barrel : barrels) {
         glPushMatrix();
@@ -846,6 +820,7 @@ void RenderBarrels() {
         glPopMatrix();
     }
 }
+
 void RenderTargets() {
     for (const auto& target : targets) {
         if (target.scale <= 0.0f) continue; // Skip fully disappeared targets
@@ -859,6 +834,7 @@ void RenderTargets() {
         glPopMatrix();
     }
 }
+
 void RenderBullets() {
     for (const auto& bullet : bullets) {
         glPushMatrix();
@@ -888,6 +864,7 @@ void RenderBullets() {
         glPopMatrix();
     }
 }
+
 void GetSkyBlendFactors(float gameTime, float& factor1, float& factor2, GLTexture& sky1, GLTexture& sky2) {
     // Normalize gameTime to 0–360
     float timeNormalized = fmod(gameTime, 360.0f);
@@ -917,6 +894,7 @@ void GetSkyBlendFactors(float gameTime, float& factor1, float& factor2, GLTextur
         sky2 = sky_morning;
     }
 }
+
 void RenderSkySphere(GLuint texture) {
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, texture);
@@ -951,6 +929,7 @@ void RenderSkySphere(GLuint texture) {
         glEnd();
     }
 }
+
 void RenderSky() {
     float factor1, factor2;
     GLTexture sky1, sky2;
@@ -1264,7 +1243,6 @@ void RenderFadeEffect() {
 }
 void UpdateFlickeringLights() {
     if (isMuzzleFlashActive) {
-        // Skip flickering light updates when muzzle flash is active
         return;
     }
     for (size_t i = 0; i < lampLightIntensity.size(); ++i) {
@@ -1277,7 +1255,7 @@ void UpdateFlickeringLights() {
         if (lampLightIntensity[i] > 1.0f) lampLightIntensity[i] = 1.0f;
 
         // Update the global ambient light proportionally
-        GLfloat ambientFactor = lampLightIntensity[i] * 0.5f; // Adjust factor as needed
+        GLfloat ambientFactor = lampLightIntensity[i] * 0.5f;
         GLfloat ambient[] = { ambientFactor, ambientFactor, ambientFactor, 1.0f };
         glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient); // Update ambient light globally
 
@@ -1299,15 +1277,14 @@ void RenderLamps() {
 
         glPushMatrix();
         glTranslatef(lampPositionsX[i], 9.0f, lampPositionsZ[i]);
-        glScalef(0.1f, 0.1f, 0.1f); // Adjust lamp scale
+        glScalef(0.1f, 0.1f, 0.1f); 
         model_light.Draw();
         glPopMatrix();
     }
 }
 
 void InitializeLamps() {
-    // Example positions for lamps on the ceiling
-    lampPositionsX = { -50.0f, 0.0f, 50.0f }; // Adjust as needed
+    lampPositionsX = { -50.0f, 0.0f, 50.0f }; 
     lampPositionsZ = { -50.0f, 0.0f, 50.0f };
 
     // Initialize light intensity and random flicker speeds
@@ -1404,9 +1381,9 @@ void RenderGameWinScreen() {
     glColor3f(0.0f, 1.0f, 0.0f); // Green color for "You Win!" message
 
     const char* winText = "CONGRATULATIONS! YOU WIN!";
-    glRasterPos2f((WIDTH - glutBitmapLength(GLUT_BITMAP_TIMES_ROMAN_24, (const unsigned char*)winText)) / 2, HEIGHT / 2 + 50);
+    glRasterPos2f((WIDTH - glutBitmapLength(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)winText)) / 2, HEIGHT / 2 + 50);
     for (const char* c = winText; *c != '\0'; c++) {
-        glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24, *c);
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
     }
 
     glColor3f(1.0f, 1.0f, 1.0f); // White color for restart and exit instructions
@@ -1771,8 +1748,8 @@ void myKeyboard(unsigned char key, int x, int y) {
                 }
             }
             // Check collision with the house
-            float houseMinX = -5.0f, houseMaxX = 5.0f;  // Adjusted X bounds
-            float houseMinZ = 15.0f, houseMaxZ = 25.0f; // Adjusted Z bounds
+            float houseMinX = -5.0f, houseMaxX = 5.0f;  
+            float houseMinZ = 15.0f, houseMaxZ = 25.0f; 
             if (newX >= houseMinX && newX <= houseMaxX && newZ >= houseMinZ && newZ <= houseMaxZ) {
                 collision = true;
             }
@@ -1949,8 +1926,6 @@ void UpdateTargetsL2() {
     }
 }
 
-
-
 bool CheckCollision(const Bullet& bullet, const Target1& target) {
     // Calculate the squared distance between the bullet and the target
     float dx = bullet.x - target.x;
@@ -1958,14 +1933,14 @@ bool CheckCollision(const Bullet& bullet, const Target1& target) {
     float distanceSquared = dx * dx + dz * dz;
 
     // Calculate the squared radius of the target
-    float targetRadius = target.scale * 5.0f; // Adjust the multiplier as needed
+    float targetRadius = target.scale * 5.0f; 
     float radiusSquared = targetRadius * targetRadius;
 
     // Check if the distance is less than or equal to the radius
     return distanceSquared <= radiusSquared;
 }
 bool CheckSphereCollision(const Bullet& bullet, const BouncingTarget& target) {
-    float effectiveRadius = target.radius * target.scale; // Adjust for scaling
+    float effectiveRadius = target.radius * target.scale; 
     float dx = bullet.x - target.x;
     float dy = bullet.y - (target.y + 1.5f); // Include the bouncing offset
     float dz = bullet.z - target.z;
@@ -2089,7 +2064,7 @@ void UpdateBullseyeTargets() {
         if (target.isHit) {
             if (!target.isFalling) {
                 // Rotate about Y-axis for self-spin
-                target.rotationY += 5.0f; // Adjust rotation speed
+                target.rotationY += 5.0f; 
                 if (target.rotationY >= 360.0f) {
                     target.rotationY = 0.0f;  // Reset Y-axis rotation
                     target.isFalling = true; // Start falling animation
@@ -2097,7 +2072,7 @@ void UpdateBullseyeTargets() {
             }
             else {
                 // Rotate about Z-axis for falling
-                target.rotationZ += 2.0f; // Adjust falling speed
+                target.rotationZ += 2.0f; 
                 if (target.rotationZ >= 90.0f) {
                     target.rotationZ = 90.0f; // Cap fall angle
                 }
@@ -2260,7 +2235,6 @@ void main(int argc, char** argv) {
         Mix_FreeChunk(thudSound);
         thudSound = nullptr;
     }
-
     Mix_CloseAudio();
     SDL_Quit();
 }
