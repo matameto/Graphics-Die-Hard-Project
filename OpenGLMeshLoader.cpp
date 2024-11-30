@@ -424,15 +424,14 @@ void Shoot() {
     bullet.directionY = sin(pitchRadians);
     bullet.directionZ = cos(pitchRadians) * sin(yawRadians);
 
-    bullet.speed = 0.5f; // Adjust speed as needed
+    bullet.speed = 1.5f; // Adjust speed as needed
 
     bullets.push_back(bullet);
     if (shootSound != nullptr) {
         Mix_PlayChannel(-1, shootSound, 0);
     }
     isMuzzleFlashActive = true;
-    muzzleFlashTimer = 0.1f;
-    recoilOffset = 0.2f; // Apply a small recoil
+    muzzleFlashTimer = 0.05f;
     UpdateAmbientLight(true);
 
   
@@ -985,7 +984,7 @@ void UpdateLighting(float currentGameTime) {
     float sunAngle = currentGameTime; // Sun angle progresses with time
 
     // Compute normalized time (0 to 1) based on the sun's angle
-    float normalizedTime = (sin(sunAngle * PI / 180.0f) + 1.0f) / 2.0f;
+    float normalizedTime = (sin(sunAngle * PI / 180.0f) + 1.0f) / 1.5f;
 
     // Update light intensity based on normalized time
     lightIntensity = minIntensity + (maxIntensity - minIntensity) * normalizedTime;
@@ -1251,7 +1250,7 @@ void RenderFadeEffect() {
         glVertex2f(1.0f, 1.0f);
         glVertex2f(-1.0f, 1.0f);
         glEnd();
-
+        
         // Restore previous matrices and OpenGL state
         glPopMatrix();
         glMatrixMode(GL_PROJECTION);
@@ -1400,6 +1399,7 @@ void RenderGameWinScreen() {
     glEnd();
 
     glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
 
     glColor3f(0.0f, 1.0f, 0.0f); // Green color for "You Win!" message
 
@@ -1423,6 +1423,8 @@ void RenderGameWinScreen() {
     }
 
     glEnable(GL_LIGHTING);
+    glEnable(GL_DEPTH_TEST);
+
 
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -1440,7 +1442,9 @@ void myDisplay(void) {
     float lookX = cos(pitch_rad) * cos(yaw_rad);
     float lookY = sin(pitch_rad);
     float lookZ = cos(pitch_rad) * sin(yaw_rad);
+    if (!isTransitioningToLevel2) {
 
+    }
     if (currentGameState == START_SCREEN) {
         RenderStartScreen();
         PlayIdleMusic();
@@ -1542,7 +1546,7 @@ void myDisplay(void) {
 
         RenderHUD(currentScore, totalTargets, remainingTime);
 
-        glutSwapBuffers();
+       // glutSwapBuffers();
     }
 
     else if (currentGameState == END_SCREEN_LOSE) {
@@ -1599,7 +1603,7 @@ void myDisplay(void) {
             glPushMatrix();
             glLoadIdentity();
             gluOrtho2D(0, WIDTH, 0, HEIGHT);
-
+                
             glMatrixMode(GL_MODELVIEW);
             glPushMatrix();
             glLoadIdentity();
@@ -1640,13 +1644,16 @@ void myDisplay(void) {
     }
     else if (currentGameState == END_SCREEN_WIN) {
         glLoadIdentity();
-        StopIdleMusic();
+        PlayIdleMusic();
         RenderGameWinScreen();
         glutSwapBuffers();
 }
 
+    
+        
+        RenderFadeEffect();
 
-    RenderFadeEffect();
+    
     glutSwapBuffers();
 
 }
@@ -2149,8 +2156,8 @@ void myInit() {
 
 }
 void myIdle() {
-    if(currentGameState == LEVEL_1) UpdateLighting(gameTime); // Update lighting
-    if (currentGameState == LEVEL_2) {
+    if(currentGameState == LEVEL_1 ) UpdateLighting(gameTime); // Update lighting
+    if (currentGameState == LEVEL_2 && !isTransitioningToLevel2) {
         UpdateFlickeringLights();
         UpdateBouncingTargets();
         gameTime += (timeSpeed);
@@ -2179,7 +2186,7 @@ void myIdle() {
             }
         }
 
-        gameTime += (timeSpeed);
+        if(currentGameState == LEVEL_1) gameTime += (timeSpeed);
 
         // Check transition to Level 2
         int currentScore = 0;
@@ -2196,22 +2203,21 @@ void myIdle() {
         }
     }
     else {
-        if (isTransitioningToLevel2) {
-            // Fade-out phase
-            transitionAlpha += transitionSpeed; // Increase alpha (fade to black)
+        
+       
+    }
+    if (isTransitioningToLevel2) {
+            transitionAlpha += transitionSpeed;
             if (transitionAlpha >= 1.0f) {
                 transitionAlpha = 1.0f; // Fully black
 
-                // Reset for Level 2
                 resetLevel1();               // Reset targets and player position
                 currentGameState = LEVEL_2;  // Move to Level 2
                 isTransitioningToLevel2 = false; // End the transition
             }
-        }
-       
-    }
-    if (currentGameState == LEVEL_2 && transitionAlpha != 0) {
-        // Fade-in phase
+     }
+
+    if (!isTransitioningToLevel2) {
         transitionAlpha -= transitionSpeed; // Decrease alpha (fade back in)
         if (transitionAlpha < 0.0f) {
             transitionAlpha = 0.0f; // Fully visible
